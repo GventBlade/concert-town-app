@@ -47,3 +47,25 @@ class EventListTests(APITestCase):
         self.assertIn("results", response.data)
         self.assertEqual(response.data["count"], 2)
         self.assertEqual(len(response.data["results"]), 2)
+
+    def test_filter_events_by_organizer(self):
+        other_user = User.objects.create_user(
+            email="other-organizer@example.com",
+            password="Password123!",
+        )
+        Event.objects.create(
+            title="Concert C",
+            description="Description C",
+            date="2026-08-03T19:00:00Z",
+            location="Lviv",
+            price="40.00",
+            total_seats=75,
+            available_seats=75,
+            organizer=other_user,
+        )
+
+        response = self.client.get(self.url, {"organizer": other_user.id})
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertEqual(response.data["count"], 1)
+        self.assertEqual(response.data["results"][0]["title"], "Concert C")

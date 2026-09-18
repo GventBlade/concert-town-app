@@ -6,7 +6,13 @@ from rest_framework.permissions import IsAuthenticated
 
 from events.models import Category, Event
 from events.permissions import IsOrganizerOrAdminOrReadOnly
-from events.serializers import CategorySerializer, EventSerializer
+from events.serializers import (
+    CategorySerializer,
+    EventDetailSerializer,
+    EventListSerializer,
+    EventSerializer,
+)
+
 
 class FlexibleSearchFilter(filters.SearchFilter):
     def get_search_terms(self, request):
@@ -17,27 +23,32 @@ class FlexibleSearchFilter(filters.SearchFilter):
             return params.replace(",", " ").split()
         return super().get_search_terms(request)
 
+
 class EventFilter(django_filters.FilterSet):
     category = django_filters.ModelChoiceFilter(
         queryset=Category.objects.all(),
         to_field_name="slug",
     )
     category_id = django_filters.NumberFilter(field_name="category_id")
+    organizer = django_filters.NumberFilter(field_name="organizer_id")
+    organizer_id = django_filters.NumberFilter(field_name="organizer_id")
 
     class Meta:
         model = Event
-        fields = ["category", "category_id", "is_active"]
+        fields = ["category", "category_id", "organizer", "organizer_id", "is_active"]
+
 
 class CategoryListCreateView(generics.ListCreateAPIView):
     queryset = Category.objects.all()
     serializer_class = CategorySerializer
     permission_classes = [IsOrganizerOrAdminOrReadOnly]
 
+
 class EventListCreateView(generics.ListCreateAPIView):
     queryset = Event.objects.filter(is_active=True).select_related(
         "organizer", "category"
     )
-    serializer_class = EventSerializer
+    serializer_class = EventListSerializer
     permission_classes = [IsOrganizerOrAdminOrReadOnly]
     parser_classes = (MultiPartParser, FormParser, JSONParser)
 
@@ -53,17 +64,29 @@ class EventListCreateView(generics.ListCreateAPIView):
 
     ordering = ["-created_at"]
 
+    def get_serializer_class(self):
+        if self.request.method == "POST":
+            return EventSerializer
+        return EventListSerializer
+
     def perform_create(self, serializer):
         serializer.save(organizer=self.request.user)
 
+
 class EventDetailView(generics.RetrieveUpdateDestroyAPIView):
     queryset = Event.objects.all().select_related("organizer", "category")
-    serializer_class = EventSerializer
+    serializer_class = EventDetailSerializer
     permission_classes = [IsOrganizerOrAdminOrReadOnly]
     parser_classes = (MultiPartParser, FormParser, JSONParser)
 
+    def get_serializer_class(self):
+        if self.request.method in ("PUT", "PATCH"):
+            return EventSerializer
+        return EventDetailSerializer
+
+
 class MyEventsListView(generics.ListAPIView):
-    serializer_class = EventSerializer
+    serializer_class = EventListSerializer
     permission_classes = [IsAuthenticated]
 
     def get_queryset(self):

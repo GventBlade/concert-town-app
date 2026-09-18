@@ -79,6 +79,38 @@ class LoginTests(APITestCase):
         self.assertEqual(response.status_code, status.HTTP_401_UNAUTHORIZED)
 
 
+class LogoutTests(APITestCase):
+    def setUp(self):
+        self.user = User.objects.create_user(
+            email="logout@example.com", password="TestPass123!"
+        )
+
+    def test_logout_blacklists_refresh_token(self):
+        login_response = self.client.post(
+            reverse("token_obtain_pair"),
+            {"email": "logout@example.com", "password": "TestPass123!"},
+            format="json",
+        )
+        access_token = login_response.data["access"]
+        refresh_token = login_response.data["refresh"]
+
+        self.client.credentials(HTTP_AUTHORIZATION=f"Bearer {access_token}")
+        logout_response = self.client.post(
+            reverse("token_blacklist"),
+            {"refresh": refresh_token},
+            format="json",
+        )
+
+        self.assertEqual(logout_response.status_code, status.HTTP_200_OK)
+
+        refresh_response = self.client.post(
+            reverse("token_refresh"),
+            {"refresh": refresh_token},
+            format="json",
+        )
+        self.assertEqual(refresh_response.status_code, status.HTTP_401_UNAUTHORIZED)
+
+
 class ProfileTests(APITestCase):
     def setUp(self):
         self.user = User.objects.create_user(

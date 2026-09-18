@@ -10,6 +10,59 @@ class CategorySerializer(serializers.ModelSerializer):
         fields = ["id", "name", "slug"]
 
 
+class EventListSerializer(serializers.ModelSerializer):
+    category = CategorySerializer(read_only=True)
+    organizer_id = serializers.IntegerField(source="organizer.id", read_only=True)
+
+    class Meta:
+        model = Event
+        fields = [
+            "id",
+            "title",
+            "description",
+            "date",
+            "starts_at",
+            "ends_at",
+            "host",
+            "location",
+            "category",
+            "price",
+            "total_seats",
+            "available_seats",
+            "image",
+            "organizer_id",
+            "is_active",
+        ]
+
+
+class EventDetailSerializer(serializers.ModelSerializer):
+    category = CategorySerializer(read_only=True)
+    organizer_id = serializers.IntegerField(source="organizer.id", read_only=True)
+
+    class Meta:
+        model = Event
+        fields = [
+            "id",
+            "title",
+            "description",
+            "date",
+            "starts_at",
+            "ends_at",
+            "host",
+            "location",
+            "category",
+            "price",
+            "total_seats",
+            "available_seats",
+            "image",
+            "organizer",
+            "organizer_id",
+            "is_active",
+            "created_at",
+            "updated_at",
+        ]
+
+
 class EventSerializer(serializers.ModelSerializer):
     category = CategorySerializer(read_only=True)
     organizer_id = serializers.IntegerField(source="organizer.id", read_only=True)
@@ -86,7 +139,9 @@ class EventSerializer(serializers.ModelSerializer):
         location = attrs.get("location")
         if location is not None and not isinstance(location, (str, dict)):
             raise serializers.ValidationError(
-                {"location": "Location must be 'online' or an object with city and venue."}
+                {
+                    "location": "Location must be 'online' or an object with city and venue."
+                }
             )
 
         if isinstance(location, dict):

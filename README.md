@@ -18,8 +18,8 @@ Users can browse events, register for events, manage events they organize, and v
 event participants when they are authorized to do so.
 
 The repository contains a Django REST API and a Vite-powered React frontend. The
-project is being developed incrementally, so some frontend event workflows are still
-backed by local storage while the backend API continues to grow.
+project is being developed incrementally, so some frontend event workflows are
+still backed by local storage while the backend API continues to grow.
 
 # About the Project
 
@@ -37,7 +37,7 @@ The current backend includes:
 - Event and category management.
 - Event registration and cancellation.
 - Organizer-specific event lists.
-- Participant access restricted to the event organizer.
+- Participant access for event organizers and admins.
 - Search, filtering, ordering, pagination, and event image uploads.
 
 # Tech Stack
@@ -86,9 +86,12 @@ concert-town-app/
 │   ├── bookings/       # Event registrations and participant access
 │   ├── config/         # Django settings, root URLs, ASGI and WSGI config
 │   ├── events/         # Events, categories, filtering, permissions and serializers
+│   ├── .dockerignore
+│   ├── .env.example
 │   ├── docker-compose.yml
 │   ├── dockerfile
 │   ├── manage.py
+│   ├── requirements.in
 │   └── requirements.txt
 ├── frontend/
 │   ├── public/          # Static assets and fonts
@@ -101,6 +104,7 @@ concert-town-app/
 │   │   ├── styles/      # Global Sass styles and themes
 │   │   └── types/       # TypeScript domain types
 │   ├── package.json
+│   ├── package-lock.json
 │   └── vite.config.ts
 └── README.md
 ```
@@ -146,24 +150,58 @@ git clone <repository-url>
 cd concert-town-app
 ```
 
-## 2. Start the backend and PostgreSQL with Docker Compose
+## Install backend dependencies locally
 
-The Compose file is located in `backend/`:
+The pinned dependencies are listed in `backend/requirements.txt`. To install
+them into a virtual environment without Docker:
 
 ```bash
 cd backend
+python3.12 -m venv .venv
+source .venv/bin/activate
+python -m pip install --upgrade pip
+python -m pip install -r requirements.txt
+```
+
+`requirements.in` lists the direct dependencies, and `requirements.txt` is the
+locked file generated from it by pip-tools. If you change dependencies, install
+pip-tools in the active virtual environment, update `requirements.in`, then
+recompile and synchronize the environment:
+
+```bash
+python -m pip install pip-tools
+pip-compile --output-file=requirements.txt requirements.in
+pip-sync requirements.txt
+```
+
+Use `pip-sync` only inside the project virtual environment; it uninstalls
+packages that are not listed in `requirements.txt`. Docker installs the pinned
+requirements automatically when building the backend image.
+
+## 2. Start the development backend and PostgreSQL with Docker Compose
+
+The Compose setup is for local development only; it uses Django's development
+server and serves uploaded media through Django. The Compose file is located in
+`backend/`. Create a local environment file from the
+example and set a private Django secret and local database password before
+starting:
+
+```bash
+cd backend
+cp .env.example .env
+openssl rand -base64 48
+# Put the generated value in SECRET_KEY in .env
 docker compose up --build
 ```
 
-The API will be available at `http://localhost:8000` and PostgreSQL at
-`localhost:5432`.
+Keep `backend/.env` private; it is ignored by Git. `DEBUG` defaults to `False`;
+set it to `True` in this local development file if you need Django to serve
+uploaded media. Compose routes the database connection to the `db` service,
+waits for PostgreSQL to become healthy, and runs migrations before starting
+Django. The web container runs as a non-root user. PostgreSQL is published on
+port `5432` for local development tools.
 
-Run migrations in another terminal:
-
-```bash
-cd backend
-docker compose exec web python manage.py migrate
-```
+The API will be available at `http://localhost:8000`.
 
 Create an administrator when needed:
 
@@ -189,7 +227,7 @@ In a new terminal:
 
 ```bash
 cd frontend
-npm install
+npm ci
 npm run dev
 ```
 
@@ -216,16 +254,44 @@ The current Compose configuration provides these local services:
 | `db`     | `localhost:5432`        | PostgreSQL database       |
 | frontend | `http://localhost:5173` | Vite development server   |
 
-The development database currently uses the Compose values below:
+Backend configuration is read from `backend/.env`:
 
-| Variable            | Value             |
-| ------------------- | ----------------- |
-| `POSTGRES_DB`       | `concert_town_db` |
-| `POSTGRES_USER`     | `postgres`        |
-| `POSTGRES_PASSWORD` | `postgres`        |
+| Variable            | Purpose                                                        |
+| ------------------- | -------------------------------------------------------------- |
+| `SECRET_KEY`        | Django signing key; replace the example with a private value   |
+| `DEBUG`             | Enables debug mode only when set to `True`                     |
+| `ALLOWED_HOSTS`     | Comma-separated Django host names                              |
+| `POSTGRES_DB`       | PostgreSQL database name                                       |
+| `POSTGRES_USER`     | PostgreSQL user                                                |
+| `POSTGRES_PASSWORD` | PostgreSQL password                                            |
+| `POSTGRES_HOST`     | PostgreSQL host (`db` in Compose; use `localhost` outside it)  |
+| `POSTGRES_PORT`     | PostgreSQL port                                                |
 
-These are development-only values. Production deployments must move secrets and
-database configuration to environment variables or a secrets manager.
+When running Django directly on your host, set `POSTGRES_HOST=localhost` in
+`backend/.env`; use `POSTGRES_HOST=db` when starting the Compose stack.
+
+The previously committed Django key must be considered compromised. Configure a
+new key in each deployment environment; changing the setting does not rotate
+keys already deployed or remove the old value from Git history. Rotating the key
+invalidates tokens signed with the previous key.
+
+This Compose setup is not suitable for production. Use a production application
+server and deployment-managed migrations, and serve uploaded media through
+object storage or a dedicated web server. Django's `DEBUG=True` media serving
+here is only a development convenience; WhiteNoise is for static files, not
+user-uploaded media.
+
+## API rate limits
+
+The API applies broad anonymous and authenticated quotas, with stricter limits
+for account registration (5/hour per IP), event bookings (10/hour per user),
+and organizer-role requests (3/day per user). Login has its own limit of 20
+attempts per minute per IP.
+
+The configured local-memory cache stores throttle state in each process. It is
+appropriate for the single-process development server, but limits will not be
+shared across multiple workers or application instances. Use a shared cache such
+as Redis for multi-worker deployments.
 
 ---
 
@@ -328,8 +394,8 @@ Login example:
 | GET         | `/api/events/my/active/`                     | List the organizer's active events        | Organizer or admin       |
 | GET         | `/api/events/my/inactive/`                   | List the organizer's inactive events      | Organizer or admin       |
 | GET         | `/api/events/categories/`                    | List categories                           | None                     |
-| POST        | `/api/events/categories/`                    | Create a category                         | Organizer or admin       |
-| GET         | `/api/events/event/{event_id}/participants/` | List event participants                   | Event organizer          |
+| POST        | `/api/events/categories/`                    | Create a category                         | Admin                    |
+| GET         | `/api/events/event/{event_id}/participants/` | List event participants                   | Event organizer or admin |
 
 Event list supports these query parameters:
 
@@ -362,6 +428,9 @@ List responses are paginated and use the standard DRF shape:
 | GET    | `/api/bookings/my-registrations/` | List the current user’s registrations  | Required           |
 | DELETE | `/api/bookings/cancel/{id}/`      | Cancel a registration                  | Registration owner |
 
+Registration responses include a lightweight nested `event` object with its ID,
+title, date, location, and image.
+
 ---
 
 # Authentication and Authorization
@@ -377,13 +446,15 @@ Authentication uses short-lived JWT access tokens and refresh tokens:
 
 Safe event methods are publicly readable. Event creation and modification require an
 organizer or administrator, and object-level checks ensure organizers can only modify
-their own events. Participant lists are visible only to the event organizer.
+their own events. Participant lists are visible to the event organizer and admins.
 
 ---
 
 # Database and Migrations
 
-PostgreSQL is the development database and Django migrations are stored per app:
+PostgreSQL is the development database and Django migrations are stored per app.
+The development Compose command applies migrations automatically. For local
+development outside Compose, migrations can be run manually:
 
 ```bash
 cd backend

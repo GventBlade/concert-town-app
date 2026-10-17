@@ -14,6 +14,44 @@ from events.models import Category, Event
 User = get_user_model()
 
 
+class CategoryPermissionTests(APITestCase):
+    def setUp(self):
+        self.url = reverse("category-list")
+        self.category_data = {"name": "Jazz", "slug": "jazz"}
+        self.organizer = User.objects.create_user(
+            email="category-organizer@example.com",
+            role=User.Role.ORGANIZER,
+        )
+        self.admin = User.objects.create_user(
+            email="category-admin@example.com",
+            role=User.Role.ADMIN,
+        )
+
+    def test_categories_are_readable_without_authentication(self):
+        Category.objects.create(name="Rock", slug="rock")
+
+        response = self.client.get(self.url)
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertEqual(response.data["results"][0]["slug"], "rock")
+
+    def test_organizer_cannot_create_category(self):
+        self.client.force_authenticate(user=self.organizer)
+
+        response = self.client.post(self.url, self.category_data, format="json")
+
+        self.assertEqual(response.status_code, status.HTTP_403_FORBIDDEN)
+        self.assertFalse(Category.objects.filter(slug="jazz").exists())
+
+    def test_admin_can_create_category(self):
+        self.client.force_authenticate(user=self.admin)
+
+        response = self.client.post(self.url, self.category_data, format="json")
+
+        self.assertEqual(response.status_code, status.HTTP_201_CREATED)
+        self.assertTrue(Category.objects.filter(slug="jazz").exists())
+
+
 class EventListTests(APITestCase):
     def setUp(self):
         self.user = User.objects.create_user(

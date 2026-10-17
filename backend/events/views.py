@@ -2,7 +2,9 @@ import django_filters
 from django_filters.rest_framework import DjangoFilterBackend
 from rest_framework import filters, generics
 from rest_framework.parsers import FormParser, JSONParser, MultiPartParser
+from rest_framework.permissions import AllowAny
 
+from accounts.permissions import IsAdminRoleOrStaff
 from events.models import Category, Event
 from events.permissions import IsOrganizerOrAdmin, IsOrganizerOrAdminOrReadOnly
 from events.serializers import (
@@ -40,7 +42,11 @@ class EventFilter(django_filters.FilterSet):
 class CategoryListCreateView(generics.ListCreateAPIView):
     queryset = Category.objects.all()
     serializer_class = CategorySerializer
-    permission_classes = [IsOrganizerOrAdminOrReadOnly]
+
+    def get_permissions(self):
+        if self.request.method == "POST":
+            return [IsAdminRoleOrStaff()]
+        return [AllowAny()]
 
 
 class EventListCreateView(generics.ListCreateAPIView):

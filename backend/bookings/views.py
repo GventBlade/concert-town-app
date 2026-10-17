@@ -5,8 +5,10 @@ from rest_framework import generics, status
 from rest_framework.exceptions import PermissionDenied
 from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
+from rest_framework.throttling import ScopedRateThrottle
 
 from events.models import Event
+from events.permissions import can_manage_event
 from .models import EventRegistration
 from .serializers import EventRegistrationSerializer
 
@@ -15,6 +17,8 @@ class EventRegistrationCreateView(generics.CreateAPIView):
     queryset = EventRegistration.objects.all()
     serializer_class = EventRegistrationSerializer
     permission_classes = [IsAuthenticated]
+    throttle_classes = [ScopedRateThrottle]
+    throttle_scope = "booking_create"
 
     def create(self, request, *args, **kwargs):
         serializer = self.get_serializer(data=request.data)
@@ -45,7 +49,7 @@ class EventParticipantListView(generics.ListAPIView):
 
     def get_queryset(self):
         event = get_object_or_404(Event, pk=self.kwargs["event_id"])
-        if event.organizer != self.request.user:
+        if not can_manage_event(self.request.user, event):
             raise PermissionDenied(
                 "You are not authorized to view participants for this event."
             )

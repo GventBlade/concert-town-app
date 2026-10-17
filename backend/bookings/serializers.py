@@ -6,13 +6,24 @@ from events.models import Event
 from .models import EventRegistration
 
 
+class RegisteredEventSerializer(serializers.ModelSerializer):
+    date = serializers.SerializerMethodField()
+
+    class Meta:
+        model = Event
+        fields = ["id", "title", "date", "location", "image"]
+
+    def get_date(self, obj):
+        return obj.starts_at or obj.date
+
+
 class EventRegistrationSerializer(serializers.ModelSerializer):
     event_id = serializers.PrimaryKeyRelatedField(
         queryset=Event.objects.all(),
         source="event",
         write_only=True,
     )
-    event = serializers.PrimaryKeyRelatedField(read_only=True)
+    event = RegisteredEventSerializer(read_only=True)
     user = serializers.SerializerMethodField(read_only=True)
 
     class Meta:

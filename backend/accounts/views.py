@@ -7,7 +7,7 @@ from rest_framework.exceptions import APIException, ValidationError
 from rest_framework.views import APIView
 from rest_framework.response import Response
 from rest_framework.permissions import IsAuthenticated
-from rest_framework.throttling import AnonRateThrottle
+from rest_framework.throttling import AnonRateThrottle, ScopedRateThrottle
 from rest_framework_simplejwt.settings import api_settings
 from rest_framework_simplejwt.token_blacklist.models import (
     BlacklistedToken,
@@ -37,6 +37,8 @@ class CustomTokenObtainPairView(TokenObtainPairView):
 
 class RegisterView(generics.CreateAPIView):
     serializer_class = RegisterSerializer
+    throttle_classes = [ScopedRateThrottle]
+    throttle_scope = "register"
 
     def create(self, request, *args, **kwargs):
         serializer = self.get_serializer(data=request.data)
@@ -96,10 +98,17 @@ class ProfileView(APIView):
 
 
 class OrganizerRoleRequestListCreateView(APIView):
+    throttle_scope = "organizer_request"
+
     def get_permissions(self):
         if self.request.method == "GET":
             return [IsAdminRoleOrStaff()]
         return [IsAuthenticated()]
+
+    def get_throttles(self):
+        if self.request.method == "POST":
+            return [ScopedRateThrottle()]
+        return super().get_throttles()
 
     def get(self, request):
         requests = OrganizerRoleRequest.objects.select_related(

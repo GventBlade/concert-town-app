@@ -1,4 +1,5 @@
 from django.contrib.auth import get_user_model
+from django.core.cache import cache
 from django.urls import reverse
 from rest_framework import status
 from rest_framework.test import APITestCase
@@ -10,6 +11,9 @@ User = get_user_model()
 
 
 class RegisterTests(APITestCase):
+    def setUp(self):
+        cache.clear()
+
     def test_register_success(self):
         url = reverse("register")
         data = {
@@ -55,6 +59,33 @@ class RegisterTests(APITestCase):
         }
         response = self.client.post(url, data, format="json")
         self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+
+    def test_register_is_rate_limited(self):
+        cache.clear()
+        url = reverse("register")
+        responses = []
+        for attempt in range(6):
+            responses.append(
+                self.client.post(
+                    url,
+                    {
+                        "email": f"user{attempt}@example.com",
+                        "password": "TestPass123!",
+                        "password_confirm": "TestPass123!",
+                    },
+                    format="json",
+                )
+            )
+
+        self.assertTrue(
+            all(
+                response.status_code == status.HTTP_201_CREATED
+                for response in responses[:5]
+            )
+        )
+        self.assertEqual(
+            responses[5].status_code, status.HTTP_429_TOO_MANY_REQUESTS
+        )
 
 
 class LoginTests(APITestCase):
@@ -177,6 +208,7 @@ class ProfileTests(APITestCase):
 
 class OrganizerRoleRequestTests(APITestCase):
     def setUp(self):
+        cache.clear()
         self.user = User.objects.create_user(email="customer@example.com")
         self.admin = User.objects.create_user(
             email="admin@example.com",
@@ -201,6 +233,24 @@ class OrganizerRoleRequestTests(APITestCase):
         )
         self.user.refresh_from_db()
         self.assertEqual(self.user.role, User.Role.CUSTOMER)
+
+    def test_organizer_role_requests_are_rate_limited(self):
+        self.client.force_authenticate(user=self.user)
+
+        responses = [
+            self.client.post(self.url, {}, format="json") for _ in range(4)
+        ]
+
+        self.assertEqual(responses[0].status_code, status.HTTP_201_CREATED)
+        self.assertEqual(
+            responses[1].status_code, status.HTTP_400_BAD_REQUEST
+        )
+        self.assertEqual(
+            responses[2].status_code, status.HTTP_400_BAD_REQUEST
+        )
+        self.assertEqual(
+            responses[3].status_code, status.HTTP_429_TOO_MANY_REQUESTS
+        )
 
     def test_unauthenticated_user_cannot_request_organizer_role(self):
         response = self.client.post(self.url, {}, format="json")
